@@ -230,7 +230,10 @@ class App():
                 except ConnectionError:
                     logging.fatal('Connection to the boot2docker VM failed unexpectedly!')
                     logging.fatal('Ensure {} VM is still running `docker-machine status {}`'.format(self.machineName, self.machineName))
-                    sys.exit(1)
+                    sys.exit("docker-forward is exiting", 1)
+                except Exception:
+                    logging.info('Connection was broken likely due to docker-machine shutdown')
+                    sys.exit("docker-forward is exiting")
 
         except KeyboardInterrupt:
             logging.warn("Program exited from ctrl+c")
@@ -238,12 +241,12 @@ class App():
         except TLSParameterError:
             logging.fatal('TLS configuration is invalid - make sure your DOCKER_TLS_VERIFY and DOCKER_CERT_PATH are set correctly')
             logging.fatal('You might need to run `eval $(docker-machine env {})`'.format(self.machineName))
-            sys.exit(1)
+            sys.exit("docker-forward is exiting", 1)
         except ConnectionError:
             logging.fatal('Connecting to the boot2docker VM failed!')
             logging.fatal('Ensure docker-machine is running `docker-machine status {}` or you might need to run `eval $(docker-machine env {})`'
                          .format(self.machineName, self.machineName))
-            sys.exit(1)
+            sys.exit("docker-forward is exiting", 1)
         except Exception:
             logging.error("Unexpected error:", sys.exc_info()[0])
             raise
@@ -270,7 +273,7 @@ if __name__ == "__main__":
             exit(0)
         elif command =="status":
             if os.path.isfile(PID_PATH) == False:
-                print "stoped"
+                print "stopped"
             else:
                 print "running"
             exit(0)
