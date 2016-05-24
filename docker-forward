@@ -11,6 +11,7 @@ import time
 import tempfile
 import shutil
 import socket
+import argparse
 from contextlib import closing
 
 
@@ -52,25 +53,8 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 sys.excepthook = handle_exception
 
 
-def print_usage():
-    print("""Forward running container's exposed ports via ssh tunnels to the configured docker-machine VM.
-Usage:
-  docker-forward [COMMAND]
-  docker-compose -h | --help
-Commands:
-  log             Print the log file
-  ls              Print the list of containers and ports that have an ssh forwarding tunnel
-  start           Start the daemon and create ssh forwarding tunnels in the background
-  stop            Stop the daemon and close all ssh forwarding tunnels
-  restart         Stop and start the forwarding daemon
-  version         Show the docker-forward version information
-  status          Show that status of docker-forward
-""")
-    exit(0)
-
-
 class App():
-    def __init__(self, machineName, machineIp, certPath):
+    def __init__(self, machineName, machineIp, certPath, allInterfaces=False):
         self.stdin_path = '/dev/null'
         self.stdout_path = '/dev/stdout'
         self.stderr_path = '/dev/stderr'
@@ -81,6 +65,9 @@ class App():
         self.machineName = machineName
         self.machineIp = machineIp
         self.certPath = certPath
+        self.allInterfacesString = ""
+        if allInterfaces is True:
+            self.allInterfacesString = "-o GatewayPorts=yes"
 
     def exceptions(self, exctype, value, tb):
         logging.error('Type:', exctype)
@@ -111,14 +98,14 @@ class App():
             return # tunnel already exists
 
         if self.check_port(port):
-            msg = "Port {} is taken by the host, shutdown the service using it on the host so {} can work".format(port, container);
+            msg = "Port {} is taken by the host, shutdown the service using it on the host so {} can work".format(port, container)
             logging.error(msg)
             sys.stderr.write("docker-forward: " + msg + "\n")
             return
 
-        command = "/usr/bin/ssh -o BatchMode=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o " \
+        command = "/usr/bin/ssh -o BatchMode=yes {} -o PasswordAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o " \
                   "ConnectionAttempts=3 -o ConnectTimeout=10 -o ControlMaster=no -o ControlPath=none docker@{} -o IdentitiesOnly=yes -i {}/id_rsa -N -L {}:localhost:{}" \
-                   .format(self.machineIp, self.certPath, port, port)
+                   .format(self.allInterfacesString, self.machineIp, self.certPath, port, port)
         logging.debug("Command {} port {}: {}".format(container, port, command))
         tunnel = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
         time.sleep(.5)
@@ -146,7 +133,7 @@ class App():
             logging.info("Removed {} port {}".format(self.portContainerMap.pop(port), port))
 
     def get_container_port_bindings(self, container):
-        ports = [];
+        ports = []
         bindings = self.cli.inspect_container(container)["HostConfig"]["PortBindings"]
         for binding in bindings.values():
             ports.append(binding[0]["HostPort"])
@@ -187,9 +174,9 @@ class App():
 
         try:
             logging.info("Running {}".format(VERSION))
-            logging.info("Using DOCKER_MACHINE_NAME {}".format(machineName))
-            logging.info("Using DOCKER_HOST {}".format(machineIp))
-            logging.info("Using DOCKER_CERT_PATH {}".format(certPath))
+            logging.info("Using DOCKER_MACHINE_NAME {}".format(self.machineName))
+            logging.info("Using DOCKER_HOST {}".format(self.machineIp))
+            logging.info("Using DOCKER_CERT_PATH {}".format(self.certPath))
 
             kwargs = kwargs_from_env(assert_hostname=False)
             kwargs['timeout'] = 15
@@ -251,72 +238,133 @@ class App():
             logging.error("Unexpected error:", sys.exc_info()[0])
             raise
 
-if __name__ == "__main__":
+def listTunnels_cmd(settings):
+    if settings['docker_running'] is False:
+        sys.exit("docker-forward is not running")
+    if os.path.isfile(LIST_PATH):
+        with open(LIST_PATH, "r") as list:
+            print(list.read())
+    else:
+        print("None")
+
+def cleanTunnels(settings):
+    if settings['docker_running'] is False:
+        return
+
+    if os.path.isfile(PIDS_PATH):
+        with open(PIDS_PATH) as f:
+            pids = f.readlines()
+        for pid in pids:
+            try:
+                sys.stdout.write("docker-forward: cleaning up stale PID {}".format(pid))
+                os.killpg(os.getpgid(int(pid)), signal.SIGKILL)
+            except Exception:
+                pass # PID may not exist anymore
+        os.remove(PIDS_PATH)
+
+def status_cmd(settings):
+    if os.path.isfile(PID_PATH) == False:
+        print "stopped"
+    else:
+        print "running"
+
+def log_cmd(settings):
+    if os.path.isfile(LOG_PATH):
+        with open(LOG_PATH, "r") as log:
+            print(log.read())
+
+
+def print_usage():
+    print("""Forward running container's exposed ports via ssh tunnels to the configured docker-machine VM.
+Usage:
+  docker-forward [COMMAND]
+  docker-compose -h | --help
+Commands:
+  log             Print the log file
+  ls              Print the list of containers and ports that have an ssh forwarding tunnel
+  start           Start the daemon and create ssh forwarding tunnels in the background
+  stop            Stop the daemon and close all ssh forwarding tunnels
+  restart         Stop and start the forwarding daemon
+  version         Show the docker-forward version information
+  status          Show that status of docker-forward
+""")
+    exit(0)
+
+
+def parseArguments(settings):
+    parser = argparse.ArgumentParser(description = 'Setup Docker Local Port Forwarding')
+    parser.add_argument('command', choices=[ 'ls', 'status', 'start', 'restart', 'stop', 'version', 'log' ],
+        help="Command to run. (see help)")
+    parser.add_argument('--allInterfaces', '-a', action='store_true', help="Forward to all local interfaces")
+    parser.add_argument('--verbose', '-v', action='store_true', help="Turn on verbose output")
+
+    results = parser.parse_args()
+
+    if results.verbose is True:
+        settings['verbose']=True
+    if results.allInterfaces is True:
+        settings['allInterfaces'] = True
+
+
+    return results.command.lower()
+
+def main():
     if 'DOCKER_MACHINE_NAME' not in os.environ or 'DOCKER_HOST' not in os.environ \
             or 'DOCKER_TLS_VERIFY' not in os.environ or 'DOCKER_CERT_PATH' not in os.environ :
         sys.exit('Docker enviroment variables not set correctly!\n'
                  'Ensure docker-machine is running `docker-machine status YourMachineName` or you might need to run `eval $(docker-machine env YourMachineName)`')
 
-    if len(sys.argv) > 1:
-        command = sys.argv[1].lower()
-        if os.path.isfile(PID_PATH) == False:
-            if command == "stop" or command == "ls":
-                sys.exit("docker-forward is not running")
-            elif command == "restart":
-                sys.argv[1] = "start"
-        if command == "ls":
-            if os.path.isfile(LIST_PATH):
-                with open(LIST_PATH, "r") as list:
-                    print(list.read())
-            else:
-                print("None")
-            exit(0)
-        elif command =="status":
-            if os.path.isfile(PID_PATH) == False:
-                print "stopped"
-            else:
-                print "running"
-            exit(0)
-        elif command == "log":
-            if os.path.isfile(LOG_PATH):
-                with open(LOG_PATH, "r") as log:
-                    print(log.read())
-            exit(0)
-        elif command == "-h" or command == "--help":
-            print_usage()
-        elif command == "version" or command == "-v":
-            print(VERSION)
-            exit(0)
-        elif command != "start" and command != "stop" and command != "restart":
-            print_usage()
+    settings = {
+        'machineName'    : os.environ['DOCKER_MACHINE_NAME'],
+        'machineIp'      : re.findall( r'[0-9]+(?:\.[0-9]+){3}', os.environ['DOCKER_HOST'])[0],
+        'certPath'       : os.environ['DOCKER_CERT_PATH'],
+        'allInterfaces'  : False,
+        'verbose'        : False,
+        'docker_running' : (os.path.isfile(PID_PATH) == True),
+        }
+
+    command = parseArguments(settings)
+
+    # Handle short-circuited commands
+    if command == "version" or command == "-v":
+        print(VERSION)
+        exit(0)
+    elif command == 'ls':
+        listTunnels_cmd(settings)
+        exit(0)
+    elif command == 'status':
+        status_cmd(settings)
+        exit(0)
+    elif command == 'log':
+        log_cmd(settings)
+        exit(0)
+    ##
+    ## Now handle real commands -- allowing sys.argv[1] to fall through to do_action
+    ##
+    elif command == 'stop':
+        if settings['docker_running'] is False:
+            sys.exit("docker-forward is not running")
+        sys.argv[1]='stop'
+        # otherwise fall through to do_action
+    elif command == 'start':
+        cleanTunnels(settings)
+        sys.argv[1]='start'
+    elif command == 'restart':
+        cleanTunnels(settings)
+        sys.argv[1]='start'
     else:
-        print_usage()
+        sys.exit("Invalid command: {}".format(command))
 
-    # cleanup old tunnels
-    if command == "start":
-        if os.path.isfile(PIDS_PATH):
-            with open(PIDS_PATH) as f:
-                pids = f.readlines()
-            for pid in pids:
-                try:
-                    sys.stdout.write("docker-forward: cleaning up stale PID {}".format(pid))
-                    os.killpg(os.getpgid(int(pid)), signal.SIGKILL)
-                except Exception:
-                    pass # PID may not exist anymore
-            os.remove(PIDS_PATH)
-
-
-
-    machineName = os.environ['DOCKER_MACHINE_NAME']
-    machineIp = re.findall( r'[0-9]+(?:\.[0-9]+){3}', os.environ['DOCKER_HOST'])[0]
-    certPath = os.environ['DOCKER_CERT_PATH']
-
-    app = App(machineName, machineIp, certPath)
+    # Only start, stop,  and restart fall through
+    app = App(settings['machineName'], settings['machineIp'], settings['certPath'],
+            settings['allInterfaces'])
     daemon_runner = runner.DaemonRunner(app)
     try:
+        # Action in sys.argv[1] 
         daemon_runner.do_action()
     except LockTimeout:
         sys.exit("Failed to aquire lock on file {}!\n"
                  "Docker-forward is already running or delete the PID file and try again.".format(PID_PATH))
 
-
+if __name__ == "__main__":
+    main()
