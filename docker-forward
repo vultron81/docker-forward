@@ -32,7 +32,7 @@ except ImportError:
     sys.exit('Python module docker_py is not installed!\n'
              'Please run `sudo easy_install pip && sudo pip install docker-py`')
 
-VERSION = "docker-forward v1.1"
+VERSION = "docker-forward v1.2"
 TMP_DIR = "/tmp/"
 PID_PATH = TMP_DIR + "docker-forward.pid"
 LIST_PATH = TMP_DIR + "docker-forward.lst"
