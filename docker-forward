@@ -343,7 +343,10 @@ def main():
         cleanTunnels(settings)
         sys.argv[1]='start'
     elif command == 'restart':
-        exit(os.system("docker-forward stop; docker-forward start"))
+        os.system("docker-forward stop")
+        # And, forge falling through with a start
+        cleanTunnels(settings)
+        sys.argv[1]='start'
     else:
         sys.exit("Invalid command: {}".format(command))
 
