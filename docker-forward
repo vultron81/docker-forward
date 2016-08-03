@@ -32,7 +32,7 @@ except ImportError:
     sys.exit('Python module docker_py is not installed!\n'
              'Please run `sudo easy_install pip && sudo pip install docker-py`')
 
-VERSION = "v1.2.1"
+VERSION = "v1.2.2"
 TMP_DIR = "/tmp/"
 PID_PATH = TMP_DIR + "docker-forward.pid"
 LIST_PATH = TMP_DIR + "docker-forward.lst"
@@ -217,7 +217,7 @@ class App():
                 except ConnectionError:
                     logging.fatal('Connection to the boot2docker VM failed unexpectedly!')
                     logging.fatal('Ensure {} VM is still running `docker-machine status {}`'.format(self.machineName, self.machineName))
-                    sys.exit("docker-forward is exiting", 1)
+                    sys.exit("docker-forward is exiting")
                 except Exception:
                     logging.info('Connection was broken likely due to docker-machine shutdown')
                     sys.exit("docker-forward is exiting")
@@ -228,12 +228,12 @@ class App():
         except TLSParameterError:
             logging.fatal('TLS configuration is invalid - make sure your DOCKER_TLS_VERIFY and DOCKER_CERT_PATH are set correctly')
             logging.fatal('You might need to run `eval $(docker-machine env {})`'.format(self.machineName))
-            sys.exit("docker-forward is exiting", 1)
+            sys.exit("docker-forward is exiting")
         except ConnectionError:
             logging.fatal('Connecting to the boot2docker VM failed!')
             logging.fatal('Ensure docker-machine is running `docker-machine status {}` or you might need to run `eval $(docker-machine env {})`'
                          .format(self.machineName, self.machineName))
-            sys.exit("docker-forward is exiting", 1)
+            sys.exit("docker-forward is exiting")
         except Exception:
             logging.error("Unexpected error:", sys.exc_info()[0])
             raise
@@ -281,7 +281,7 @@ class SmartFormatter(argparse.HelpFormatter):
             # this is the RawTextHelpFormatter._split_lines
         return argparse.HelpFormatter._split_lines(self, text, width)
 
-def parseArguments(settings):
+def parseArguments():
     parser = argparse.ArgumentParser(description = VERSION + ", forward running container's exposed ports via ssh tunnels to the configured docker-machine VM",
                                      formatter_class=SmartFormatter)
     parser.add_argument('command', choices=[ 'ls', 'status', 'start', 'restart', 'stop', 'log' ],
@@ -298,14 +298,6 @@ def parseArguments(settings):
 
     results = parser.parse_args()
 
-    if results.verbose is True:
-        settings['verbose']=True
-    if results.allInterfaces is True:
-        settings['allInterfaces'] = True
-
-    return results.command.lower()
-
-def main():
     if 'DOCKER_MACHINE_NAME' not in os.environ or 'DOCKER_HOST' not in os.environ \
             or 'DOCKER_TLS_VERIFY' not in os.environ or 'DOCKER_CERT_PATH' not in os.environ :
         sys.exit('Docker enviroment variables not set correctly!\n'
@@ -315,12 +307,15 @@ def main():
         'machineName'    : os.environ['DOCKER_MACHINE_NAME'],
         'machineIp'      : re.findall( r'[0-9]+(?:\.[0-9]+){3}', os.environ['DOCKER_HOST'])[0],
         'certPath'       : os.environ['DOCKER_CERT_PATH'],
-        'allInterfaces'  : False,
-        'verbose'        : False,
+        'allInterfaces'  : results.allInterfaces,
+        'verbose'        : results.verbose,
         'docker_running' : (os.path.isfile(PID_PATH) == True),
-        }
+    }
 
-    command = parseArguments(settings)
+    return results.command.lower(), settings
+
+def main():
+    command, settings = parseArguments()
 
     if command == 'ls':
         listTunnels_cmd(settings)
