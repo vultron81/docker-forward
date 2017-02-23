@@ -24,13 +24,13 @@ except ImportError:
              'Please run `sudo easy_install pip && sudo pip install python-daemon`')
 
 try:
-    from docker.client import Client
+    from docker.client import APIClient
     from docker.utils import kwargs_from_env
     from docker.errors import TLSParameterError
     from requests.exceptions import ConnectionError
 except ImportError:
-    sys.exit('Python module docker_py is not installed!\n'
-             'Please run `sudo easy_install pip && sudo pip install docker-py`')
+    sys.exit('Python module docker is not installed!\n'
+             'Please run `sudo easy_install pip && sudo pip install docker`')
 
 VERSION = "v1.2.3"
 TMP_DIR = "/tmp/"
@@ -180,7 +180,7 @@ class App():
 
             kwargs = kwargs_from_env(assert_hostname=False)
             kwargs['timeout'] = 15
-            self.cli = Client(**kwargs)
+            self.cli = APIClient(**kwargs)
             logging.info("Docker Version {}".format(self.cli.version()))
 
             atexit.register(self.remove_all_tunnels)
