@@ -21,7 +21,7 @@ try:
     from lockfile import LockTimeout
 except ImportError:
     sys.exit('Python module python-daemon is not installed!\n'
-             'Please run `sudo easy_install pip && sudo pip install python-daemon`')
+             'Please run `pip install --user python-daemon`')
 
 try:
     from docker.client import APIClient
@@ -30,7 +30,7 @@ try:
     from requests.exceptions import ConnectionError
 except ImportError:
     sys.exit('Python module docker is not installed!\n'
-             'Please run `sudo easy_install pip && sudo pip install docker`')
+             'Please run `pip install --user docker`')
 
 VERSION = "v1.2.3"
 TMP_DIR = "/tmp/"
