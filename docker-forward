@@ -179,7 +179,7 @@ class App():
             logging.info("Using DOCKER_CERT_PATH {}".format(self.certPath))
 
             kwargs = kwargs_from_env(assert_hostname=False)
-            kwargs['timeout'] = 15
+            kwargs['timeout'] = 30
             self.cli = APIClient(**kwargs)
             logging.info("Docker Version {}".format(self.cli.version()))
 
