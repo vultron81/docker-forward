@@ -12,6 +12,7 @@ import tempfile
 import shutil
 import socket
 import argparse
+from requests.exceptions import HTTPError
 from contextlib import closing
 
 
@@ -131,12 +132,19 @@ class App():
             except Exception:
                 pass # its possble the tunnel is already gone and that is ok
             logging.info("Removed {} port {}".format(self.portContainerMap.pop(port), port))
+        else:
+            logging.error("{} not in portPidMap: {}".format(port, self.portPidMap.keys()))
 
     def get_container_port_bindings(self, container):
         ports = []
-        bindings = self.cli.inspect_container(container)["HostConfig"]["PortBindings"]
-        for binding in bindings.values():
-            ports.append(binding[0]["HostPort"])
+        try:
+            bindings = self.cli.inspect_container(container)["HostConfig"]["PortBindings"]
+            for binding in bindings.values():
+                ports.append(binding[0]["HostPort"])
+        except HTTPError as e:
+            logging.exception(e)
+            raise
+
         return ports
 
     def dump_port_mapping_and_pids(self):
@@ -179,17 +187,22 @@ class App():
             logging.info("Using DOCKER_CERT_PATH {}".format(self.certPath))
 
             kwargs = kwargs_from_env(assert_hostname=False)
-            kwargs['timeout'] = 30
+            kwargs['timeout'] = 15
             self.cli = APIClient(**kwargs)
             logging.info("Docker Version {}".format(self.cli.version()))
 
             atexit.register(self.remove_all_tunnels)
+
+            # keeps track of the container -> ports mapping for removal.
+            container_to_ports_map = {}
 
             # process existing containers
             for container in self.cli.containers():
                 logging.debug(container)
                 for port in self.get_container_port_bindings(container["Id"]):
                     self.create_tunnel(container["Names"][0].replace("/", ""), port)
+                    container_to_ports_map[container["Id"]] = port
+
             self.dump_port_mapping_and_pids()
 
             # poll for docker events
@@ -201,17 +214,27 @@ class App():
                             logging.debug(event)
                             if "status" in event:
                                 if event["status"] == "start":
-                                    for port in self.get_container_port_bindings(event["id"]):
+                                    event_id = event["id"]
+                                    for port in self.get_container_port_bindings(event_id):
                                         container = event["Actor"]["Attributes"]["name"]
+                                        if event_id not in container_to_ports_map:
+                                            container_to_ports_map[event_id] = [port]
+                                        else:
+                                            if port not in container_to_ports_map[event_id]:
+                                                container_to_ports_map[event_id].append(port)
                                         self.create_tunnel(container, port)
                                         self.dump_port_mapping_and_pids()
                                 elif event["status"] == "stop":
-                                    for port in self.get_container_port_bindings(event["id"]):
-                                        self.remove_tunnel(port)
-                                        self.dump_port_mapping_and_pids()
+                                    event_id = event["id"]
+                                    try:
+                                        for port in container_to_ports_map[event_id]:
+                                            self.remove_tunnel(port)
+                                            self.dump_port_mapping_and_pids()
+                                        del container_to_ports_map[event_id]
+                                    except KeyError:
+                                        logging.error("event id: {} not in {}".format(event_id, container_to_ports_map))
                         except AttributeError:
                             logging.warning("Unexpected event format: " + str(event))
-
 
 
                 except ConnectionError:
