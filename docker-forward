@@ -12,6 +12,8 @@ import tempfile
 import shutil
 import socket
 import argparse
+from errno import ETIME
+from functools import wraps
 from requests.exceptions import HTTPError
 from contextlib import closing
 
@@ -243,14 +245,38 @@ class App():
             logging.error("Unexpected error:", sys.exc_info()[0])
             raise
 
+class TimeoutError(Exception):
+    pass
+
+def timeout(seconds=10, error_message=os.strerror(ETIME)):
+    # Borrowed from: https://stackoverflow.com/questions/2281850/timeout-function-if-it-takes-too-long-to-finish
+    def decorator(func):
+        def _handle_timeout(signum, frame):
+            raise TimeoutError(error_message)
+
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+            return result
+
+        return wraps(func)(wrapper)
+
+    return decorator
+
+@timeout(30, "Are your containers running?")
 def listTunnels_cmd(settings):
     if settings['docker_running'] is False:
         sys.exit("docker-forward is not running")
-    if os.path.isfile(LIST_PATH):
-        with open(LIST_PATH, "r") as list:
-            print(list.read())
-    else:
-        print("None")
+    while True:
+        if os.path.isfile(LIST_PATH):
+            with open(LIST_PATH, "r") as list:
+                print(list.read())
+                return
+
 
 def cleanTunnels(settings):
     if settings['docker_running'] is False:
