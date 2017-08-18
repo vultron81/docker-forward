@@ -12,6 +12,7 @@ import tempfile
 import shutil
 import socket
 import argparse
+from requests.exceptions import HTTPError
 from contextlib import closing
 
 
@@ -132,11 +133,15 @@ class App():
                 pass # its possble the tunnel is already gone and that is ok
             logging.info("Removed {} port {}".format(self.portContainerMap.pop(port), port))
 
-    def get_container_port_bindings(self, container):
+    def get_container_port_bindings(self, container, event=None):
         ports = []
-        bindings = self.cli.inspect_container(container)["HostConfig"]["PortBindings"]
-        for binding in bindings.values():
-            ports.append(binding[0]["HostPort"])
+        try:
+            bindings = self.cli.inspect_container(container)["HostConfig"]["PortBindings"]
+            for binding in bindings.values():
+                ports.append(binding[0]["HostPort"])
+        except HTTPError as e:
+            logging.warn(e.message)
+            logging.warn("event info:\n     {}".format(event))
         return ports
 
     def dump_port_mapping_and_pids(self):
@@ -201,12 +206,12 @@ class App():
                             logging.debug(event)
                             if "status" in event:
                                 if event["status"] == "start":
-                                    for port in self.get_container_port_bindings(event["id"]):
+                                    for port in self.get_container_port_bindings(event["id"], event):
                                         container = event["Actor"]["Attributes"]["name"]
                                         self.create_tunnel(container, port)
                                         self.dump_port_mapping_and_pids()
                                 elif event["status"] == "stop":
-                                    for port in self.get_container_port_bindings(event["id"]):
+                                    for port in self.get_container_port_bindings(event["id"], event):
                                         self.remove_tunnel(port)
                                         self.dump_port_mapping_and_pids()
                         except AttributeError:
