@@ -35,7 +35,7 @@ except ImportError:
     sys.exit('Python module docker is not installed!\n'
              'Please run `pip install --user docker`')
 
-VERSION = "v1.2.3"
+VERSION = "v1.4.0"
 TMP_DIR = "/tmp/"
 PID_PATH = TMP_DIR + "docker-forward.pid"
 LIST_PATH = TMP_DIR + "docker-forward.lst"
