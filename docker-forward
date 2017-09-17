@@ -267,7 +267,7 @@ def timeout(seconds=10, error_message=os.strerror(ETIME)):
 
     return decorator
 
-@timeout(30, "Are your containers running?")
+@timeout(5, "Are your containers running?")
 def listTunnels_cmd(settings):
     if settings['docker_running'] is False:
         sys.exit("docker-forward is not running")
@@ -276,6 +276,7 @@ def listTunnels_cmd(settings):
             with open(LIST_PATH, "r") as list:
                 print(list.read())
                 return
+        time.sleep(1)
 
 
 def cleanTunnels(settings):
@@ -349,8 +350,12 @@ def main():
     command, settings = parseArguments()
 
     if command == 'ls':
-        listTunnels_cmd(settings)
-        exit(0)
+        try:
+            listTunnels_cmd(settings)
+            exit(0)
+        except TimeoutError as e:
+            print("Timeout: %s\n" % (e))
+            exit(1)
     elif command == 'status':
         status_cmd(settings)
         exit(0)
@@ -381,7 +386,7 @@ def main():
             settings['allInterfaces'])
     daemon_runner = runner.DaemonRunner(app)
     try:
-        # Action in sys.argv[1] 
+        # Action in sys.argv[1]
         daemon_runner.do_action()
 
     except LockTimeout:
