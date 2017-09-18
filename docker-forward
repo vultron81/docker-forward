@@ -79,11 +79,14 @@ class App():
 
     def check_port(self, port):
         result = None
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-            if sock.connect_ex(("127.0.0.1", int(port))) == 0:
-                result = True
-            else:
-                result = False
+        try:
+            with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+                if sock.connect_ex(("127.0.0.1", int(port))) == 0:
+                    result = True
+                else:
+                    result = False
+        except Exception:
+            pass # On rare instances the port variable can sometimes be an empty string causing an error
         return result
 
     def remove_all_tunnels(self):
